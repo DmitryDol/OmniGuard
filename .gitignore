@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Model weights (large binary files)
+*.pt
+*.pth
+*.onnx
+
+# Recorded videos
+data/videos/*.avi
+data/videos/*.mp4
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Example files (not part of the project)
+*_example.*
+Example_*
