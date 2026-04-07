@@ -1,0 +1,46 @@
+[project]
+name = "omniguard"
+version = "0.1.0"
+description = "Desktop video surveillance application with AI-powered person detection in protected zones"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.4.4",
+    "opencv-python>=4.13.0.92",
+    "pydantic-settings>=2.9.1",
+    "psycopg2-binary>=2.9.11",
+    "pyside6>=6.11.0",
+    "supervision>=0.27.0.post2",
+    "torch>=2.11.0",
+    "torchaudio>=2.11.0",
+    "torchvision>=0.26.0",
+    "ultralytics>=8.4.34",
+    "pandas>=3.0.2",
+    "seaborn>=0.13.2",
+]
+
+[tool.ruff]
+line-length = 90
+show-fixes = true
+exclude = ["UIFiles/ui_*.py", "migrations"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG001", # unused arguments in functions
+]
+ignore = [
+    "E501",  # line too long
+    "B008",  # do not perform function calls in argument defaults
+    "W191",  # indentation contains tabs
+    "B904",  # Allow raising exceptions without from e
+]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
