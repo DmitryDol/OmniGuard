@@ -3,22 +3,33 @@ name = "omniguard"
 version = "0.1.0"
 description = "Desktop video surveillance application with AI-powered person detection in protected zones"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
+    "pillow>=11.0.0",
     "pydantic-settings>=2.9.1",
     "psycopg2-binary>=2.9.11",
     "pyside6>=6.11.0",
     "sqlalchemy>=2.0",
     "supervision>=0.27.0.post2",
-    "torch>=2.11.0",
-    "torchaudio>=2.11.0",
-    "torchvision>=0.26.0",
-    "ultralytics>=8.4.34",
+    "torch>=2.6.0",
+    "torchaudio>=2.6.0",
+    "torchvision>=0.21.0",
     "pandas>=3.0.2",
     "seaborn>=0.13.2",
+    "ultralytics>=8.4.35",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.ruff]
 line-length = 90
