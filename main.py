@@ -9,7 +9,7 @@ import numpy as np
 from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QPixmap
-from PySide6.QtSql import QSqlTableModel
+from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from camera import Camera
@@ -110,26 +110,33 @@ class VideoThread(QThread):
         args:
             frame: cv2 video capture frame
         """
-        self.video_writer.write(frame)
+        if self.video_writer is not None:
+            self.video_writer.write(frame)
 
     def realise(self) -> None:
         """
         end of detection, save file to file_path
         """
-        self.video_writer.release()
+        if self.video_writer is not None:
+            self.video_writer.release()
         # cv2.destroyAllWindows()
 
-    def send_frame(self, frame, client_socket: socket.socket):
+    def send_frame(self, frame, client_socket: socket.socket) -> bool:
+        if frame is None or getattr(frame, "size", 0) == 0:
+            return True
         _, buffer = cv2.imencode(".jpg", frame)
         data = buffer.tobytes()
         size = len(data)
+        client_socket.settimeout(0.5)
         try:
             client_socket.sendall(struct.pack(">L", size) + data)
-        except (BrokenPipeError, ConnectionResetError):
+            return True
+        except Exception as e:
             client_socket.close()
+            if self.client_connected:
+                logger.info("Mobile client disconnected: %s", e)
             self.client_connected = False
-            print("Client disconnected")
-            raise BrokenPipeError
+            return False
 
     def stop(self):
         self.running = False
@@ -292,20 +299,20 @@ class VideoThread(QThread):
             self.change_pixmap_signal.emit(main_frame)
 
             # ── Stream to mobile client if connected ─────────────────────
-            if self.client_connected and oth_frames:
-                frame1 = oth_frames[0]
-                if oth_box_annotators and oth_annotators:
-                    frame1 = oth_box_annotators[0].annotate(
-                        scene=frame1, detections=oth_detections[0]
-                    )
-                    for annotator in oth_annotators[0]:
-                        frame1 = annotator.annotate(scene=frame1)
-                try:
-                    self.send_frame(main_frame, self.client_socket1)
+            if self.client_connected:
+                success1 = self.send_frame(main_frame, self.client_socket1)
+                
+                if self.client_connected and oth_frames:
+                    frame1 = oth_frames[0]
+                    if oth_box_annotators and oth_annotators:
+                        if oth_box_annotators[0] and oth_detections and oth_detections[0]:
+                            frame1 = oth_box_annotators[0].annotate(
+                                scene=frame1, detections=oth_detections[0]
+                            )
+                        if oth_annotators[0]:
+                            for annotator in oth_annotators[0]:
+                                frame1 = annotator.annotate(scene=frame1)
                     self.send_frame(frame1, self.client_socket2)
-                except (BrokenPipeError, ConnectionResetError, OSError):
-                    self.client_connected = False
-                    logger.info("Mobile client disconnected")
 
             if isinstance(self.camera, Camera) and not self.camera.cap.isOpened():
                 self.camera.connect_to_camera()
@@ -335,19 +342,23 @@ class HumanDetectorDesktopApp(QMainWindow):
         # activate people detection every n frames, if 1 - always active
         self.activate_detector_every_n_frames = settings.DETECTION_EVERY_N_FRAMES
 
-        # Load cameras from DB; if provided an initial_camera from the startup
-        # dialog, prepend it (it may not be stored in the DB yet).
+        # Load cameras from DB. The initial_camera is already saved in the DB by the startup logic.
         self.cameras = self.data.get_cameras()
-        if initial_camera is not None:
-            # Avoid duplicates: only prepend if not already from DB
-            self.cameras.insert(0, initial_camera)
-        elif len(self.cameras) == 0:
-            self.cameras.append(Camera(0, 0, "webcam 1", 30, (1280, 720)))
+        if len(self.cameras) == 0:
+            self.cameras.append(Camera(1, 0, "webcam 1", 30, (1280, 720)))
 
         for cam in self.cameras:
             self.ui.cb_current_camera.addItem(str(cam.name))
 
-        self.current_camera = self.cameras[0]
+        initial_idx = 0
+        if initial_camera is not None:
+            for i, cam in enumerate(self.cameras):
+                if cam.id == initial_camera.id:
+                    initial_idx = i
+                    break
+
+        self.current_camera = self.cameras[initial_idx]
+        self.ui.cb_current_camera.setCurrentIndex(initial_idx)
         self.ui.cb_current_camera.currentIndexChanged.connect(self.cb_index_changed)
 
         self.email_server = None
@@ -396,18 +407,19 @@ class HumanDetectorDesktopApp(QMainWindow):
         if name == "":
             name = None
 
-        # Somehow this methods does not work
-        # self.data.add_camera(ip, fps, resolution, name)
-        # self.data.add_cam_list(ip, fps, resolution, name)
-        self.data.add_cam_exec(ip, fps, resolution, name)
+        self.data.add_camera(ip, fps, resolution, name)
         self.cameras = self.data.get_cameras()
         self.cb_update()
         self.view_data()
         self.add_edit_camera_window.close()
 
     def edit_curr_camera(self):
-        index = self.ui_cameras_list_window.tbl_cameras.selectedIndexes()[0]
-        id = str(self.ui_cameras_list_window.tbl_cameras.model().data(index))
+        indexes = self.ui_cameras_list_window.tbl_cameras.selectedIndexes()
+        if not indexes:
+            return
+        row = indexes[0].row()
+        id_index = self.ui_cameras_list_window.tbl_cameras.model().index(row, 0)
+        id = str(self.ui_cameras_list_window.tbl_cameras.model().data(id_index))
 
         ip = self.ui_add_edit_camera.le_ip.text()
         fps = int(self.ui_add_edit_camera.le_fps.text())
@@ -425,8 +437,12 @@ class HumanDetectorDesktopApp(QMainWindow):
         self.add_edit_camera_window.close()
 
     def delete_curr_camera(self):
-        index = self.ui_cameras_list_window.tbl_cameras.selectedIndexes()[0]
-        id = str(self.ui_cameras_list_window.tbl_cameras.model().data(index))
+        indexes = self.ui_cameras_list_window.tbl_cameras.selectedIndexes()
+        if not indexes:
+            return
+        row = indexes[0].row()
+        id_index = self.ui_cameras_list_window.tbl_cameras.model().index(row, 0)
+        id = str(self.ui_cameras_list_window.tbl_cameras.model().data(id_index))
 
         self.data.delete_camera(id)
         self.view_data()
@@ -440,22 +456,29 @@ class HumanDetectorDesktopApp(QMainWindow):
         if sender.text() == "Добавить камеру":
             self.ui_add_edit_camera.btn_save_camera.clicked.connect(self.add_new_camera)
         else:
-            """index  = self.ui_cameras_list_window.tbl_cameras.selectedIndexes()[0]
-            id = str(self.ui_cameras_list_window.tbl_cameras.model().data(index))
-            camera_data = self.data.get_camera(id)
-            self.ui_add_edit_camera.le_ip.setText(str(camera_data.ip))
-            self.ui_add_edit_camera.le_fps.setText(str(camera_data.camera_fps))
-            self.ui_add_edit_camera.le_name.setText(str(camera_data.name))
-            self.ui_add_edit_camera.le_resolution.setText(' '.join(map(str, camera_data.resolution)))"""
+            indexes = self.ui_cameras_list_window.tbl_cameras.selectedIndexes()
+            if indexes:
+                row = indexes[0].row()
+                id_index = self.ui_cameras_list_window.tbl_cameras.model().index(row, 0)
+                cam_id = str(self.ui_cameras_list_window.tbl_cameras.model().data(id_index))
+                camera_data = self.data.get_camera(cam_id)
+                self.ui_add_edit_camera.le_ip.setText(str(camera_data.ip))
+                self.ui_add_edit_camera.le_fps.setText(str(camera_data.camera_fps))
+                self.ui_add_edit_camera.le_name.setText(str(camera_data.name))
+                self.ui_add_edit_camera.le_resolution.setText(' '.join(map(str, camera_data.resolution)))
             self.ui_add_edit_camera.btn_save_camera.clicked.connect(self.edit_curr_camera)
 
         self.add_edit_camera_window.show()
 
     def view_data(self):
-        self.model = QSqlTableModel(self)
-        self.model.setTable("cameras")
-        self.model.select()
+        headers = ["id", "connection_string", "name", "fps", "resolution"]
+        self.model = QStandardItemModel()
+        self.model.setHorizontalHeaderLabels(headers)
+        for cam in self.data.get_cameras_as_dicts():
+            row = [QStandardItem(str(cam[h] or "")) for h in headers]
+            self.model.appendRow(row)
         self.ui_cameras_list_window.tbl_cameras.setModel(self.model)
+        self.ui_cameras_list_window.tbl_cameras.resizeColumnsToContents()
 
     def open_cameras_list_window(self):
         self.cameras_list_window = QtWidgets.QDialog()
@@ -623,16 +646,20 @@ if __name__ == "__main__":
     if dialog.exec() != SourceSelectionDialog.Accepted:
         sys.exit(0)
 
-    is_file = dialog.source == "file"
-    cam_id = 0  # temporary ID for non-DB cameras
-    initial_camera = Camera(
-        id=cam_id,
-        camera_ip_and_port=dialog.camera_url,
-        name=dialog.camera_name,
-        fps=dialog.fps,
-        resolution=dialog.resolution,
-        is_file=is_file,
-    )
+    from connection import Data
+    data = Data()
+
+    cam_str = str(dialog.camera_url)
+
+    # Ensure the selected camera exists in the DB so it acquires a valid ID
+    existing_cameras = data.get_cameras()
+    initial_camera = next((c for c in existing_cameras if str(c.ip) == cam_str), None)
+
+    if initial_camera is None:
+        res_str = f"{dialog.resolution[0]} {dialog.resolution[1]}"
+        data.add_camera(cam_str, dialog.fps, res_str, dialog.camera_name)
+        existing_cameras = data.get_cameras()
+        initial_camera = existing_cameras[-1]
 
     window = HumanDetectorDesktopApp(initial_camera=initial_camera)
     window.show()
