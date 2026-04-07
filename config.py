@@ -26,7 +26,9 @@ class Settings(BaseSettings):
 
     # Detection config
     DETECTION_EVERY_N_FRAMES: int = 5
-    DETECTION_CONFIDENCE_THRESHOLD: float = 0.4
+    DETECTION_CONFIDENCE_THRESHOLD: float = 0.5
+    DETECTION_MODEL: str = "l"  # nano, small, medium, large
+    ZONE_COLOR: tuple[int, int, int] = (0, 0, 255)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
