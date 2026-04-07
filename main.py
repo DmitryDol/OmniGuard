@@ -500,24 +500,6 @@ class HumanDetectorDesktopApp(QMainWindow):
 
         self.cameras_list_window.show()
 
-    # connected to click on settings
-    def open_settings_window(self):
-        """
-        Create new window where you can
-            change zone,
-            sender and reciever emails
-        and some more things will be added)
-        """
-        self.settings_window = QtWidgets.QDialog()
-        self.ui_settings_window = Ui_EmailPathChanging()
-        self.ui_settings_window.setupUi(self.settings_window)
-        self.ui_settings_window.btn_save_zone.clicked.connect(self.save_new_cords)
-
-        self.ui_settings_window.btn_save_reciever.clicked.connect(self.save_reciever)
-        self.ui_settings_window.btn_save_sender.clicked.connect(self.save_sender)
-
-        self.settings_window.show()
-
     def open_zone_redactor(self):
         # добавить готовые зоны из бд если есть и сунуть их туда же их в конструктор
         list_of_polygons = self.data.get_zones_by_camera_id(self.current_camera.id)
@@ -542,15 +524,22 @@ class HumanDetectorDesktopApp(QMainWindow):
         """
         Create new window where you can
             change zone,
-            sender and reciever emails
+            sender and reciever emails,
+            video path
         and some more things will be added)
         """
         self.settings_window = QtWidgets.QDialog()
         self.ui_settings_window = Ui_EmailPathChanging()
         self.ui_settings_window.setupUi(self.settings_window)
-        self.ui_settings_window.btn_save_video_path.clicked.connect(
-            self.update_video_path
-        )
+        
+        if hasattr(self.ui_settings_window, 'btn_save_zone'):
+            try:
+                self.ui_settings_window.btn_save_zone.clicked.connect(self.save_new_cords)
+            except AttributeError:
+                pass
+                
+        if hasattr(self.ui_settings_window, 'btn_save_video_path'):
+            self.ui_settings_window.btn_save_video_path.clicked.connect(self.update_video_path)
 
         self.ui_settings_window.btn_save_reciever.clicked.connect(self.save_reciever)
         self.ui_settings_window.btn_save_sender.clicked.connect(self.save_sender)
@@ -656,8 +645,15 @@ if __name__ == "__main__":
     initial_camera = next((c for c in existing_cameras if str(c.ip) == cam_str), None)
 
     if initial_camera is None:
+        existing_names = {c.name for c in existing_cameras if c.name}
+        final_name = dialog.camera_name or "Camera"
+        counter = 2
+        while final_name in existing_names:
+            final_name = f"{dialog.camera_name or 'Camera'} {counter}"
+            counter += 1
+
         res_str = f"{dialog.resolution[0]} {dialog.resolution[1]}"
-        data.add_camera(cam_str, dialog.fps, res_str, dialog.camera_name)
+        data.add_camera(cam_str, dialog.fps, res_str, final_name)
         existing_cameras = data.get_cameras()
         initial_camera = existing_cameras[-1]
 
